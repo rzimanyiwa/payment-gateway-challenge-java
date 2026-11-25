@@ -17,10 +17,15 @@ public class BankClient {
   }
 
   public BankPaymentResponse authorize(BankPaymentRequest request) {
+    BankPaymentResponse response;
     try {
-      return restTemplate.postForObject(bankUrl, request, BankPaymentResponse.class);
+      response = restTemplate.postForObject(bankUrl, request, BankPaymentResponse.class);
     } catch (RestClientException e) {
       throw new BankUnavailableException("Bank call failed", e);
     }
+    if (response == null) {
+      throw new BankUnavailableException("Bank returned an empty response", null);
+    }
+    return response;
   }
 }

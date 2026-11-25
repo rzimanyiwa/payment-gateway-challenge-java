@@ -51,6 +51,14 @@ class BankClientTest {
   }
 
   @Test
+  void whenBankReturnsAnEmptyBodyThenBankUnavailableExceptionIsThrown() {
+    bank.expect(requestTo(BANK_URL)).andRespond(withSuccess());
+
+    assertThatThrownBy(() -> bankClient.authorize(BankPaymentRequest.from(REQUEST)))
+        .isInstanceOf(BankUnavailableException.class);
+  }
+
+  @Test
   void whenBankIsUnavailableThenBankUnavailableExceptionIsThrown() {
     bank.expect(requestTo(BANK_URL)).andRespond(withServiceUnavailable());
 
