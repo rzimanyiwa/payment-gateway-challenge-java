@@ -1,5 +1,6 @@
 package com.checkout.payment.gateway.model;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import jakarta.validation.constraints.AssertTrue;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
@@ -22,6 +23,7 @@ public record PostPaymentRequest(
     @NotNull @Pattern(regexp = "\\d{3,4}", message = "must be 3-4 digits")
     String cvv) {
 
+  @JsonIgnore
   @AssertTrue(message = "card has expired")
   public boolean isExpiryDateInFuture() {
     if (expiryMonth == null || expiryYear == null || expiryMonth < 1 || expiryMonth > 12) {

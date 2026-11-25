@@ -1,6 +1,9 @@
 package com.checkout.payment.gateway.controller;
 
+import static org.hamcrest.Matchers.containsInAnyOrder;
+import static org.springframework.http.MediaType.APPLICATION_JSON;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -46,5 +49,25 @@ class PaymentGatewayControllerTest {
     mvc.perform(get("/v1/payments/" + UUID.randomUUID()))
         .andExpect(status().isNotFound())
         .andExpect(jsonPath("$.message").value("Payment not found"));
+  }
+
+  @Test
+  void whenPaymentRequestIsInvalidThenItIsRejected() throws Exception {
+    mvc.perform(post("/v1/payments").contentType(APPLICATION_JSON).content("""
+            {"card_number": "1234", "expiry_month": 13, "expiry_year": 2030,
+             "currency": "GBP", "amount": 100, "cvv": "123"}"""))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.status").value("Rejected"))
+        .andExpect(jsonPath("$.errors[*].field",
+            containsInAnyOrder("card_number", "expiry_month")));
+  }
+
+  @Test
+  void whenAmountIsNotAWholeNumberThenItIsRejected() throws Exception {
+    mvc.perform(post("/v1/payments").contentType(APPLICATION_JSON).content("""
+            {"card_number": "2222405343248877", "expiry_month": 4, "expiry_year": 2030,
+             "currency": "GBP", "amount": 10.5, "cvv": "123"}"""))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.status").value("Rejected"));
   }
 }
