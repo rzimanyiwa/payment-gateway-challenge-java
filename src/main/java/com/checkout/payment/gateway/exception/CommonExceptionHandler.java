@@ -51,4 +51,11 @@ public class CommonExceptionHandler {
     return ResponseEntity.status(HttpStatus.BAD_GATEWAY)
         .body(new ErrorResponse("Acquiring bank unavailable, please retry"));
   }
+
+  @ExceptionHandler(IdempotencyKeyInUseException.class)
+  public ResponseEntity<ErrorResponse> handleIdempotencyKeyInUse(
+      IdempotencyKeyInUseException ex) {
+    return ResponseEntity.status(HttpStatus.CONFLICT)
+        .body(new ErrorResponse("Idempotency-Key is still in progress, retry shortly"));
+  }
 }

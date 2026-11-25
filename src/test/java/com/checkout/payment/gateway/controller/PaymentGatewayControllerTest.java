@@ -4,11 +4,14 @@ import static org.hamcrest.Matchers.containsInAnyOrder;
 import static org.hamcrest.Matchers.matchesPattern;
 import static org.hamcrest.Matchers.startsWith;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.http.MediaType.APPLICATION_JSON;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -121,5 +124,22 @@ class PaymentGatewayControllerTest {
   void whenRequestHasNoSafeRequestIdThenOneIsGenerated() throws Exception {
     mvc.perform(get("/v1/payments/" + UUID.randomUUID()).header("X-Request-Id", "bad\nid"))
         .andExpect(header().string("X-Request-Id", matchesPattern("[0-9a-f-]{36}")));
+  }
+
+  @Test
+  void whenIdempotencyKeyIsRepeatedThenSamePaymentIsReturned() throws Exception {
+    when(bankClient.authorize(any())).thenReturn(new BankPaymentResponse(true, "auth-123"));
+    String key = UUID.randomUUID().toString();
+
+    String first = mvc.perform(post("/v1/payments").header("Idempotency-Key", key)
+            .contentType(APPLICATION_JSON).content(VALID_REQUEST))
+        .andExpect(status().isCreated())
+        .andReturn().getResponse().getContentAsString();
+    mvc.perform(post("/v1/payments").header("Idempotency-Key", key)
+            .contentType(APPLICATION_JSON).content(VALID_REQUEST))
+        .andExpect(status().isCreated())
+        .andExpect(content().json(first));
+
+    verify(bankClient, times(1)).authorize(any());
   }
 }

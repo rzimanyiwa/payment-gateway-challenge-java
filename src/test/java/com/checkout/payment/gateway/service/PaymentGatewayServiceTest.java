@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -12,10 +13,13 @@ import com.checkout.payment.gateway.bank.BankClient;
 import com.checkout.payment.gateway.bank.BankPaymentResponse;
 import com.checkout.payment.gateway.bank.BankUnavailableException;
 import com.checkout.payment.gateway.enums.PaymentStatus;
+import com.checkout.payment.gateway.exception.IdempotencyKeyInUseException;
 import com.checkout.payment.gateway.model.Payment;
 import com.checkout.payment.gateway.model.PostPaymentRequest;
+import com.checkout.payment.gateway.repository.IdempotencyKeys;
 import com.checkout.payment.gateway.repository.PaymentsRepository;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+import java.util.Optional;
 import org.junit.jupiter.api.Test;
 
 class PaymentGatewayServiceTest {
@@ -25,15 +29,16 @@ class PaymentGatewayServiceTest {
 
   private final BankClient bankClient = mock(BankClient.class);
   private final PaymentsRepository paymentsRepository = mock(PaymentsRepository.class);
+  private final IdempotencyKeys idempotencyKeys = new IdempotencyKeys();
   private final SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
-  private final PaymentGatewayService service =
-      new PaymentGatewayService(paymentsRepository, bankClient, meterRegistry);
+  private final PaymentGatewayService service = new PaymentGatewayService(paymentsRepository,
+      idempotencyKeys, bankClient, meterRegistry);
 
   @Test
   void whenBankAuthorizesThenPaymentIsStoredAsAuthorized() {
     when(bankClient.authorize(any())).thenReturn(new BankPaymentResponse(true, "auth-123"));
 
-    Payment payment = service.processPayment(REQUEST);
+    Payment payment = service.processPayment(REQUEST, null);
 
     assertThat(payment.status()).isEqualTo(PaymentStatus.AUTHORIZED);
     assertThat(payment.cardNumberLastFour()).isEqualTo("8877");
@@ -46,7 +51,7 @@ class PaymentGatewayServiceTest {
   void whenBankDeclinesThenPaymentIsStoredAsDeclined() {
     when(bankClient.authorize(any())).thenReturn(new BankPaymentResponse(false, ""));
 
-    Payment payment = service.processPayment(REQUEST);
+    Payment payment = service.processPayment(REQUEST, null);
 
     assertThat(payment.status()).isEqualTo(PaymentStatus.DECLINED);
     verify(paymentsRepository).add(payment);
@@ -58,8 +63,43 @@ class PaymentGatewayServiceTest {
     when(bankClient.authorize(any()))
         .thenThrow(new BankUnavailableException("Bank call failed", null));
 
-    assertThatThrownBy(() -> service.processPayment(REQUEST))
+    assertThatThrownBy(() -> service.processPayment(REQUEST, null))
         .isInstanceOf(BankUnavailableException.class);
     verify(paymentsRepository, never()).add(any());
+  }
+
+  @Test
+  void whenIdempotencyKeyIsRepeatedThenBankIsCalledOnce() {
+    when(bankClient.authorize(any())).thenReturn(new BankPaymentResponse(true, "auth-123"));
+    Payment first = service.processPayment(REQUEST, "key-1");
+    when(paymentsRepository.get(first.id())).thenReturn(Optional.of(first));
+
+    Payment second = service.processPayment(REQUEST, "key-1");
+
+    assertThat(second).isEqualTo(first);
+    verify(bankClient, times(1)).authorize(any());
+  }
+
+  @Test
+  void whenIdempotencyKeyIsStillInProgressThenItIsRefused() {
+    idempotencyKeys.reserve("key-1");
+
+    assertThatThrownBy(() -> service.processPayment(REQUEST, "key-1"))
+        .isInstanceOf(IdempotencyKeyInUseException.class);
+    verify(bankClient, never()).authorize(any());
+  }
+
+  @Test
+  void whenBankFailsThenTheSameIdempotencyKeyCanBeRetried() {
+    when(bankClient.authorize(any()))
+        .thenThrow(new BankUnavailableException("Bank call failed", null))
+        .thenReturn(new BankPaymentResponse(true, "auth-123"));
+
+    assertThatThrownBy(() -> service.processPayment(REQUEST, "key-1"))
+        .isInstanceOf(BankUnavailableException.class);
+    Payment payment = service.processPayment(REQUEST, "key-1");
+
+    assertThat(payment.status()).isEqualTo(PaymentStatus.AUTHORIZED);
+    verify(bankClient, times(2)).authorize(any());
   }
 }
