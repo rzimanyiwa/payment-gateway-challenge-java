@@ -1,6 +1,7 @@
 package com.checkout.payment.gateway.controller;
 
 import static org.hamcrest.Matchers.containsInAnyOrder;
+import static org.hamcrest.Matchers.matchesPattern;
 import static org.hamcrest.Matchers.startsWith;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -108,5 +109,17 @@ class PaymentGatewayControllerTest {
     mvc.perform(post("/v1/payments").contentType(APPLICATION_JSON).content(VALID_REQUEST))
         .andExpect(status().isBadGateway())
         .andExpect(jsonPath("$.message").value("Acquiring bank unavailable, please retry"));
+  }
+
+  @Test
+  void whenRequestHasRequestIdThenItIsReturned() throws Exception {
+    mvc.perform(get("/v1/payments/" + UUID.randomUUID()).header("X-Request-Id", "merchant-123"))
+        .andExpect(header().string("X-Request-Id", "merchant-123"));
+  }
+
+  @Test
+  void whenRequestHasNoSafeRequestIdThenOneIsGenerated() throws Exception {
+    mvc.perform(get("/v1/payments/" + UUID.randomUUID()).header("X-Request-Id", "bad\nid"))
+        .andExpect(header().string("X-Request-Id", matchesPattern("[0-9a-f-]{36}")));
   }
 }

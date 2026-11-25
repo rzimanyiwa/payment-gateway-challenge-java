@@ -15,6 +15,7 @@ import com.checkout.payment.gateway.enums.PaymentStatus;
 import com.checkout.payment.gateway.model.Payment;
 import com.checkout.payment.gateway.model.PostPaymentRequest;
 import com.checkout.payment.gateway.repository.PaymentsRepository;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.Test;
 
 class PaymentGatewayServiceTest {
@@ -24,8 +25,9 @@ class PaymentGatewayServiceTest {
 
   private final BankClient bankClient = mock(BankClient.class);
   private final PaymentsRepository paymentsRepository = mock(PaymentsRepository.class);
+  private final SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
   private final PaymentGatewayService service =
-      new PaymentGatewayService(paymentsRepository, bankClient);
+      new PaymentGatewayService(paymentsRepository, bankClient, meterRegistry);
 
   @Test
   void whenBankAuthorizesThenPaymentIsStoredAsAuthorized() {
@@ -37,6 +39,7 @@ class PaymentGatewayServiceTest {
     assertThat(payment.cardNumberLastFour()).isEqualTo("8877");
     assertThat(payment.authorizationCode()).isEqualTo("auth-123");
     verify(paymentsRepository).add(payment);
+    assertThat(meterRegistry.counter("payments", "status", "Authorized").count()).isEqualTo(1);
   }
 
   @Test
@@ -47,6 +50,7 @@ class PaymentGatewayServiceTest {
 
     assertThat(payment.status()).isEqualTo(PaymentStatus.DECLINED);
     verify(paymentsRepository).add(payment);
+    assertThat(meterRegistry.counter("payments", "status", "Declined").count()).isEqualTo(1);
   }
 
   @Test
