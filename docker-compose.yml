@@ -16,6 +16,7 @@ services:
   payment_gateway:
     container_name: payment_gateway
     build: .
+    pull_policy: build
     ports:
       - "8090:8090"
     environment:
