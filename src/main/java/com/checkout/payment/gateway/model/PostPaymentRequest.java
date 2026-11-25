@@ -8,6 +8,7 @@ import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Positive;
 import java.time.YearMonth;
+import java.time.ZoneOffset;
 
 public record PostPaymentRequest(
     @NotNull @Pattern(regexp = "\\d{14,19}", message = "must be 14-19 digits")
@@ -29,7 +30,7 @@ public record PostPaymentRequest(
     if (expiryMonth == null || expiryYear == null || expiryMonth < 1 || expiryMonth > 12) {
       return true;
     }
-    YearMonth now = YearMonth.now();
+    YearMonth now = YearMonth.now(ZoneOffset.UTC);
     return expiryYear > now.getYear()
         || (expiryYear == now.getYear() && expiryMonth >= now.getMonthValue());
   }

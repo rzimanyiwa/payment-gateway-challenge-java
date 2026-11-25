@@ -6,6 +6,7 @@ import jakarta.validation.ConstraintViolation;
 import jakarta.validation.Validation;
 import jakarta.validation.Validator;
 import java.time.YearMonth;
+import java.time.ZoneOffset;
 import java.util.Set;
 import java.util.stream.Collectors;
 import org.junit.jupiter.api.Test;
@@ -16,7 +17,7 @@ import org.junit.jupiter.params.provider.ValueSource;
 class PostPaymentRequestTest {
 
   private static final String CARD = "2222405343248877";
-  private static final YearMonth NEXT_YEAR = YearMonth.now().plusYears(1);
+  private static final YearMonth NEXT_YEAR = YearMonth.now(ZoneOffset.UTC).plusYears(1);
   private static final int MONTH = NEXT_YEAR.getMonthValue();
   private static final int YEAR = NEXT_YEAR.getYear();
   private static final String CURRENCY = "GBP";
@@ -48,7 +49,7 @@ class PostPaymentRequestTest {
 
   @Test
   void whenCardExpiredLastMonthThenItIsRejected() {
-    YearMonth lastMonth = YearMonth.now().minusMonths(1);
+    YearMonth lastMonth = YearMonth.now(ZoneOffset.UTC).minusMonths(1);
     PostPaymentRequest request = request(CARD, lastMonth.getMonthValue(), lastMonth.getYear(),
         CURRENCY, AMOUNT, CVV);
 
@@ -57,7 +58,7 @@ class PostPaymentRequestTest {
 
   @Test
   void whenCardExpiresThisMonthThenItIsAccepted() {
-    YearMonth thisMonth = YearMonth.now();
+    YearMonth thisMonth = YearMonth.now(ZoneOffset.UTC);
     PostPaymentRequest request = request(CARD, thisMonth.getMonthValue(), thisMonth.getYear(),
         CURRENCY, AMOUNT, CVV);
 
