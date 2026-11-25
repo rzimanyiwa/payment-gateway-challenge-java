@@ -1,12 +1,20 @@
 package com.checkout.payment.gateway.controller;
 
 import static org.hamcrest.Matchers.containsInAnyOrder;
+import static org.hamcrest.Matchers.startsWith;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.when;
 import static org.springframework.http.MediaType.APPLICATION_JSON;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.checkout.payment.gateway.bank.BankClient;
+import com.checkout.payment.gateway.bank.BankPaymentResponse;
+import com.checkout.payment.gateway.bank.BankUnavailableException;
 import com.checkout.payment.gateway.enums.PaymentStatus;
 import com.checkout.payment.gateway.model.Payment;
 import com.checkout.payment.gateway.repository.PaymentsRepository;
@@ -15,16 +23,23 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.test.web.servlet.MockMvc;
 
 @SpringBootTest
 @AutoConfigureMockMvc
 class PaymentGatewayControllerTest {
 
+  private static final String VALID_REQUEST = """
+      {"card_number": "2222405343248877", "expiry_month": 4, "expiry_year": 2030,
+       "currency": "GBP", "amount": 100, "cvv": "123"}""";
+
   @Autowired
   private MockMvc mvc;
   @Autowired
   private PaymentsRepository paymentsRepository;
+  @MockBean
+  private BankClient bankClient;
 
   @Test
   void whenPaymentWithIdExistThenCorrectPaymentIsReturned() throws Exception {
@@ -60,6 +75,7 @@ class PaymentGatewayControllerTest {
         .andExpect(jsonPath("$.status").value("Rejected"))
         .andExpect(jsonPath("$.errors[*].field",
             containsInAnyOrder("card_number", "expiry_month")));
+    verifyNoInteractions(bankClient);
   }
 
   @Test
@@ -69,5 +85,28 @@ class PaymentGatewayControllerTest {
              "currency": "GBP", "amount": 10.5, "cvv": "123"}"""))
         .andExpect(status().isBadRequest())
         .andExpect(jsonPath("$.status").value("Rejected"));
+  }
+
+  @Test
+  void whenBankAuthorizesThenPaymentIsCreated() throws Exception {
+    when(bankClient.authorize(any())).thenReturn(new BankPaymentResponse(true, "auth-123"));
+
+    mvc.perform(post("/v1/payments").contentType(APPLICATION_JSON).content(VALID_REQUEST))
+        .andExpect(status().isCreated())
+        .andExpect(header().string("Location", startsWith("/v1/payments/")))
+        .andExpect(jsonPath("$.status").value("Authorized"))
+        .andExpect(jsonPath("$.card_number_last_four").value("8877"))
+        .andExpect(jsonPath("$.card_number").doesNotExist())
+        .andExpect(jsonPath("$.authorization_code").doesNotExist());
+  }
+
+  @Test
+  void whenBankIsUnavailableThen502IsReturned() throws Exception {
+    when(bankClient.authorize(any()))
+        .thenThrow(new BankUnavailableException("Bank call failed", null));
+
+    mvc.perform(post("/v1/payments").contentType(APPLICATION_JSON).content(VALID_REQUEST))
+        .andExpect(status().isBadGateway())
+        .andExpect(jsonPath("$.message").value("Acquiring bank unavailable, please retry"));
   }
 }

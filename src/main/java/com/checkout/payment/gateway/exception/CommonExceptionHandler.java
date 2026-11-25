@@ -1,5 +1,6 @@
 package com.checkout.payment.gateway.exception;
 
+import com.checkout.payment.gateway.bank.BankUnavailableException;
 import com.checkout.payment.gateway.model.ErrorResponse;
 import com.checkout.payment.gateway.model.RejectedPaymentResponse;
 import com.checkout.payment.gateway.model.RejectedPaymentResponse.FieldError;
@@ -42,5 +43,12 @@ public class CommonExceptionHandler {
     LOG.info("Payment rejected: unreadable request body");
     return ResponseEntity.badRequest().body(new RejectedPaymentResponse(
         List.of(new FieldError("body", "malformed JSON or a field has the wrong type"))));
+  }
+
+  @ExceptionHandler(BankUnavailableException.class)
+  public ResponseEntity<ErrorResponse> handleBankUnavailable(BankUnavailableException ex) {
+    LOG.error("Acquiring bank unavailable", ex);
+    return ResponseEntity.status(HttpStatus.BAD_GATEWAY)
+        .body(new ErrorResponse("Acquiring bank unavailable, please retry"));
   }
 }
