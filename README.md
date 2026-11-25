@@ -46,7 +46,7 @@ curl -i -X POST localhost:8090/v1/payments \
 | `201` + `Location` | Authorized or Declined; payment stored | Fetch it later from `Location` |
 | `400` | Rejected: `errors` lists every invalid field; the bank was not called | Fix the request |
 | `409` | A request with this `Idempotency-Key` is still in progress | Retry shortly |
-| `502` | The bank gave no decision; nothing stored | Retry, ideally with the same key |
+| `502` | The bank gave no decision; nothing stored | Retry; after a timeout, see below |
 
 `GET /v1/payments/{id}` returns `200` with the payment, or `404` if it does not exist.
 
@@ -56,7 +56,7 @@ declined, and `0` makes the bank fail (`502`).
 Optional headers:
 
 - **`Idempotency-Key`**: repeating a request with the same key returns the first payment
-  instead of charging again.
+  instead of charging again, once the gateway has the bank's answer.
 - **`X-Request-Id`**: echoed on the response and added to every log line; generated if absent.
 
 ## Design decisions
@@ -65,16 +65,20 @@ Optional headers:
 - **`201` for Declined as well as Authorized.** Either way a payment exists and can be fetched;
   a decline is the bank's business decision, not an HTTP error.
 - **Bank failure is `502`, not `Declined`.** A bank error or timeout is no decision; calling it
-  Declined would mislead the shopper. Nothing is stored, so a retry is safe.
+  Declined would mislead the shopper. Nothing is stored.
 - **No automatic retry of the bank call.** After a timeout we cannot know whether the card was
-  charged, so a retry could charge twice. Instead the merchant retries with an
-  `Idempotency-Key`, which is reserved before the bank is called, so even two concurrent
-  retries reach the bank once.
+  charged, so a retry could charge twice.
+- **Idempotency keys** are reserved before the bank is called, so a double submit or two
+  concurrent retries reach the bank once, and a retry after a lost response returns the stored
+  payment. **Known gap:** if the bank call fails, the key is released, so a retry calls the bank
+  again; after a timeout the first attempt may already have charged the card. Closing it needs
+  a `Pending` status reconciled with the bank (see next steps).
 - **Card data never leaks.** The full card number and CVV are never stored, logged or returned;
   only the last four digits are kept. The bank's authorization code is stored for reconciliation
   but never returned.
-- **Strict input types.** Card number and CVV are strings (`012` keeps its zero), a missing
+- **Input types.** Card number and CVV are held as strings (`012` keeps its zero), a missing
   number is rejected rather than read as 0, and `10.5` is rejected rather than truncated to 10.
+  Jackson still accepts a JSON number for a string field (and `"100"` for the amount).
 - **Built test-first**, one step per commit; each skeleton flaw was fixed by the test that
   exposed it.
 - **Observability:** Actuator health and HTTP metrics, a `payments` counter by status (the
@@ -82,6 +86,7 @@ Optional headers:
 
 ## Assumptions
 
+- Payment ids are random UUIDs: unguessable, so one merchant cannot enumerate payments.
 - A card is valid until the end of its expiry month (UTC). Far-future years are accepted; the
   requirements set no limit.
 - The amount must be above zero and fit in an `int` (up to 2,147,483,647 minor units, about
@@ -98,8 +103,11 @@ Optional headers:
   Actuator on an internal port.
 - **Storage:** a real database, with a unique constraint on the idempotency key, and auditing
   (`created_at`, the merchant who made the payment, and an append-only log of payment events).
-- **Idempotency:** expire keys after about 24 hours, and reject a reused key sent with a
-  different body.
+- **Idempotency:** on a bank timeout, store the payment as `Pending` and keep the key, then
+  reconcile with the bank (or void the attempt, or pass the key to an acquirer that supports
+  one); expire keys after about 24 hours; reject a reused key sent with a different body.
+- **Stricter JSON:** `spring.jackson.mapper.allow-coercion-of-scalars=false`, so a number sent
+  for a string field (or a string for a number) is rejected.
 - **Resilience:** a circuit breaker on the bank call, configurable timeouts.
 - **Errors:** one standard format with stable codes (RFC 9457 Problem Details).
 - **Operations:** dashboards and alerts on the metrics, distributed tracing, image scanning in CI.
