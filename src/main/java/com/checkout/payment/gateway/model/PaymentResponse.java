@@ -1,10 +1,12 @@
 package com.checkout.payment.gateway.model;
 
 import com.checkout.payment.gateway.enums.PaymentStatus;
+import io.swagger.v3.oas.annotations.media.Schema;
 import java.util.UUID;
 
 public record PaymentResponse(
     UUID id,
+    @Schema(implementation = String.class, allowableValues = {"Authorized", "Declined"})
     PaymentStatus status,
     String cardNumberLastFour,
     int expiryMonth,
