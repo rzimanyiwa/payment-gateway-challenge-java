@@ -24,5 +24,18 @@ dependencies {
 }
 
 tasks.named('test') {
-    useJUnitPlatform()
+    useJUnitPlatform {
+        excludeTags 'e2e'
+    }
+}
+
+tasks.register('e2eTest', Test) {
+    description = 'Runs end-to-end tests against the bank simulator (docker compose up first).'
+    group = 'verification'
+    testClassesDirs = sourceSets.test.output.classesDirs
+    classpath = sourceSets.test.runtimeClasspath
+    outputs.upToDateWhen { false }
+    useJUnitPlatform {
+        includeTags 'e2e'
+    }
 }
